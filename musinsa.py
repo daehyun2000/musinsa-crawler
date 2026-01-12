@@ -3,56 +3,59 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 import time
-import requests # [필수] 텔레그램 통신용
+import pandas as pd             # [추가] 엑셀 처리를 위한 도구
+from datetime import datetime   # [추가] 오늘 날짜 기록용
+import os                       # [추가] 파일이 있는지 확인용
 
-# ==========================================
-# [설정] 방금 성공한 토큰과 ID를 여기에 넣으세요!
-# ==========================================
-my_token = "7947719889:AAHZy-86EFoh5H7sWRIGjae6kEnFNIjBpEg" 
-my_chat_id = "8077219703"
-
-def send_telegram_message(text):
-    """텔레그램으로 메시지를 쏘는 함수"""
-    url = f"https://api.telegram.org/bot{my_token}/sendMessage"
-    params = {"chat_id": my_chat_id, "text": text}
-    requests.get(url, params=params)
-
-# 1. 브라우저 몰래 켜기 (옵션 추가)
+# 1. 브라우저 설정 (Headless 모드 추천: 창 안 뜨고 백그라운드 실행)
 options = webdriver.ChromeOptions()
-# options.add_argument("headless") # 나중에 이 주석(#)을 풀면 창이 안 뜨고 백그라운드에서 돌아요!
+options.add_argument("headless") # 이 줄을 주석(#) 처리하면 브라우저가 뜨는 게 보입니다.
 
-print("브라우저를 실행합니다...")
+print("🕵️ 무신사 잠입 시작...")
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-# 2. 무신사 상품 페이지 이동
-url = "https://www.musinsa.com/app/goods/3164998" 
+# 2. 타겟 상품 (원하는 상품으로 바꾸셔도 됩니다)
+url = "https://www.musinsa.com/app/goods/3164998"
 driver.get(url)
-time.sleep(5)
-
-# 3. 가격 가져오기 (XPath 사용)
-my_xpath = "//span[contains(@class, 'Price__CalculatedPrice')]"
-target_price = 500000 # 목표 가격 (이것보다 싸면 알림!)
+time.sleep(3) # 로딩 대기
 
 try:
-    price_tag = driver.find_element(By.XPATH, my_xpath)
+    # 3. 데이터 수집 (가격 & 상품명)
+    xpath_price = "//span[contains(@class, 'Price__CalculatedPrice')]"
+    price_tag = driver.find_element(By.XPATH, xpath_price)
+    
+    # 숫자 변환
     raw_price = price_tag.text 
-    
-    # "486,000원" -> 486000 (숫자)로 변환
     clean_price = int(raw_price.replace("원", "").replace(",", ""))
-    print(f"현재 가격: {clean_price}원")
     
-    # [핵심 로직] 가격 비교 & 알림 발사
-    if clean_price <= target_price:
-        msg = f"🔥[대현 알리미] 가격 하락! ({clean_price}원)\n얼른 사러 가세요!\n{url}"
-        send_telegram_message(msg)
-        print("텔레그램 알림 전송 완료!")
+    # 현재 시간
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    print(f"✅ 수집 성공! 시간: {now} | 가격: {clean_price}원")
+
+    # ---------------------------------------------------------
+    # [핵심 엔지니어링] 수집한 데이터를 '창고(CSV)'에 적재하기
+    # ---------------------------------------------------------
+    
+    # 저장할 데이터 뭉치 만들기
+    new_data = {
+        '수집시간': [now],
+        '상품명': ['무신사 셔츠'], # 나중엔 이것도 크롤링하면 됨
+        '가격': [clean_price]
+    }
+    df = pd.DataFrame(new_data)
+
+    # 파일이 없으면 새로 만들고(header=True), 있으면 이어붙이기(mode='a', header=False)
+    file_name = 'musinsa_log.csv'
+    if not os.path.exists(file_name):
+        df.to_csv(file_name, index=False, mode='w', encoding='utf-8-sig')
     else:
-        print("아직 비싸서 알림 안 보냄.")
+        df.to_csv(file_name, index=False, mode='a', header=False, encoding='utf-8-sig')
+        
+    print(f"💾 '{file_name}' 파일에 안전하게 저장했습니다.")
 
 except Exception as e:
-    print("에러 발생:", e)
-    send_telegram_message(f"오류 발생: {e}")
+    print(f"❌ 에러 발생: {e}")
 
 finally:
     driver.quit()
-    print("프로그램 종료")
